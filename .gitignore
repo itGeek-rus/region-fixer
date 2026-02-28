@@ -1,0 +1,46 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+/dist/
+
+# Go workspace file
+go.work
+
+# Dependencies
+vendor/
+
+# Enviroment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS
+.DB_Store
+Thumbs.db
+
+# Logs
+.log
+
+# Air (live reload)
+tmp/
+
+# Database
+*.db
+*.sqllite
+*.sqllite3
+
+# Migrations
+# migrations/*.sql
