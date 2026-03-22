@@ -1,0 +1,177 @@
+version: "3"
+
+vars:
+  APP_NAME: region-fixer
+  MAIN_PKG: ./cmd/app
+  BIN_DIR: ./bin
+  BIN_PATH: "{{.BIN_DIR}}/{{.APP_NAME}}"
+  DOCKER_COMPOSE_FILE: ./docker-compose.yml
+  LOCAL_PORT: "{{default \"8080\" .SERVER_PORT}}"
+
+tasks:
+  default:
+    desc: Показать список задач
+    cmds:
+      - task --list
+
+  # ---------------------------
+  # Установка инструментов
+  # ---------------------------
+  tools:install:
+    desc: Установить инструменты (gosec, gocritic, golangci-lint)
+    cmds:
+      - go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - go install github.com/go-critic/go-critic/cmd/gocritic@latest
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+  # ---------------------------
+  # Зависимости
+  # ---------------------------
+  deps:
+    desc: Обновить и почистить зависимости (go mod tidy)
+    cmds:
+      - go mod tidy
+
+  # ---------------------------
+  # Сборка / локальный запуск
+  # ---------------------------
+  build:
+    desc: Собираем бинарник приложения
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -o {{.BIN_PATH}} {{.MAIN_PKG}}
+
+  local-run:
+    desc: Локальный запуск приложения (go run)
+    cmds:
+      - task free-port
+      - go run {{.MAIN_PKG}}
+
+  local-run-bin:
+    desc: Локальный запуск собранного бинарника
+    deps: [build, free-port]
+    cmds:
+      - "{{.BIN_PATH}}"
+
+  # ---------------------------
+  # Docker / инфраструктура
+  # ---------------------------
+  dc:up:
+    desc: Запустить инфраструктуру (docker compose up -d)
+    cmds:
+      - docker compose -f {{.DOCKER_COMPOSE_FILE}} up -d
+
+  dc:down:
+    desc: Остановить инфраструктуру (docker compose down)
+    cmds:
+      - docker compose -f {{.DOCKER_COMPOSE_FILE}} down
+
+  dc:logs:
+    desc: Логи всех сервисов из docker compose
+    cmds:
+      - docker compose -f {{.DOCKER_COMPOSE_FILE}} logs -f
+
+  dc:restart:
+    desc: Перезапустить инфраструктуру
+    cmds:
+      - task dc:down
+      - task dc:up
+
+  # ---------------------------
+  # Тесты
+  # ---------------------------
+  test:
+    desc: Запустить все тесты
+    cmds:
+      - go test ./...
+
+  test:race:
+    desc: Запустить тесты с -race
+    cmds:
+      - go test -race ./...
+
+  # ---------------------------
+  # Форматирование и базовые проверки
+  # ---------------------------
+  fmt:
+    desc: Форматирование кода (gofmt, перезапись файлов)
+    cmds:
+      - gofmt -w .
+
+  fmt:check:
+    desc: Проверить форматирование без изменений (удобно для CI)
+    cmds:
+      - |
+        test -z "$(gofmt -l .)" || (echo "gofmt: нужно выполнить task fmt" && exit 1)
+
+  vet:
+    desc: Статический анализ (go vet)
+    cmds:
+      - go vet ./...
+
+  cleancode:
+    desc: Форматирование и базовые проверки (gofmt + go vet)
+    cmds:
+      - task fmt
+      - task vet
+
+  # ---------------------------
+  # Безопасность и продвинутые линтеры
+  # ---------------------------
+  gosec:
+    desc: Анализ безопасности с помощью gosec
+    cmds:
+      - gosec ./...
+
+  gocritic:
+    desc: Анализ кода с помощью gocritic
+    cmds:
+      - gocritic check ./...
+
+  golangci:
+    desc: Анализ кода через golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  lint:all:
+    desc: Полный цикл проверок (cleancode, gosec, gocritic, golangci, тесты)
+    cmds:
+      - task cleancode
+      - task gosec
+      - task gocritic
+      - task golangci
+      - task test
+
+  # ---------------------------
+  # Освобождение порта
+  # ---------------------------
+  free-port:
+    desc: Освободить локальный порт {{.LOCAL_PORT}} (если занят)
+    cmds:
+      - |
+        if lsof -i :{{.LOCAL_PORT}} -t >/dev/null 2>&1; then \
+          echo "Killing process on port {{.LOCAL_PORT}}"; \
+          kill -9 $(lsof -i :{{.LOCAL_PORT}} -t); \
+        else \
+          echo "Port {{.LOCAL_PORT}} is free"; \
+        fi
+
+  # ---------------------------
+  # Утилиты
+  # ---------------------------
+  health:
+    desc: Проверить /health endpoint
+    cmds:
+      # URL без кавычек вокруг host:port — иначе ломается YAML и шаблон default
+      - curl -v http://{{default "127.0.0.1" .SERVER_HOST}}:{{.LOCAL_PORT}}/health || true
+
+  env:print:
+    desc: Показать основные переменные окружения приложения
+    cmds:
+      - echo "DB_HOST=$DB_HOST"
+      - echo "DB_PORT=$DB_PORT"
+      - echo "DB_USER=$DB_USER"
+      - echo "DB_NAME=$DB_NAME"
+      - echo "SERVER_HOST=$SERVER_HOST"
+      - echo "SERVER_PORT=$SERVER_PORT"
+      - echo "APP_ENV=$APP_ENV"
